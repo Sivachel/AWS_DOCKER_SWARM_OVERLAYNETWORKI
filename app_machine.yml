@@ -1,0 +1,118 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars_files:
+    - ./aws_keys.yml
+    - ./aws_vars.yml
+  tasks:
+      - name: Create a security group for app
+        ec2_group:
+          name: "{{ security_group_app }}"
+          description: The app security group
+          region: "{{ region }}"
+          aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+          aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+          rules:
+            - proto: tcp
+              from_port: 22
+              to_port: 22
+              cidr_ip: 0.0.0.0/0
+            - proto: tcp
+              from_port: 80
+              to_port: 80
+              cidr_ip: 0.0.0.0/0
+            - proto: tcp
+              from_port: 443
+              to_port: 443
+              cidr_ip: 0.0.0.0/0
+          rules_egress:
+            - proto: all
+              cidr_ip: 0.0.0.0/0
+
+      - name: Launch the new EC2 Instance for app
+        ec2:
+          aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+          aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+          group: "{{ security_group_app }}"
+          instance_type: "{{ instance_type }}"
+          image: "{{ image }}"
+          wait: true
+          region: "{{ region }}"
+          keypair: "{{ keypair }}"
+          count: "{{ app_count }}"
+          count_tag:
+            Name: "{{ app_name }}"
+          instance_tags:
+            Name: "{{ app_name }}"
+        register: app
+
+      - name: Add the newly created EC2 instance(s) to host group
+        lineinfile: dest={{ hostpath }}
+                    regexp={{ item.public_ip }}
+                    insertbefore="[db]"
+                    line="{{ item.public_ip }} {{hoststring}}"
+                    state=present
+        with_items: "{{ app.instances }}"
+      #
+      # - name: Copy worker token to a YAML variable file
+      #   lineinfile:
+      #     dest: ./generated_vars.yml
+      #     regexp: "^APP_IP: "
+      #     line: "APP_IP: {{ item.public_ip }}"
+      #   with_items: "{{ app.instances }}"
+
+      - name: Add tag to Instance(s)
+        ec2_tag:
+          aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+          aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+          resource: "{{ item.id }}"
+          region: "{{ region }}"
+          state: "present"
+        with_items: "{{ app.instances }}"
+        args:
+          tags:
+            Type: app
+
+      - name: Wait for SSH to come up
+        local_action: wait_for
+                      host={{ item.public_ip }}
+                      port=22
+                      state=started
+        with_items: "{{ app.instances }}"
+
+      - name: Create the ELB only listening over port 80
+        ec2_elb_lb:
+          name: "{{ lb_name }}"
+          state: present
+          region: "{{ region }}"
+          aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+          aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+          zones:
+            - "{{ zone1 }}"
+            - "{{ zone2 }}"
+          listeners:
+            - protocol: http
+              load_balancer_port: 80
+              instance_port: 80
+
+      - name: sleep for 180 seconds and continue with play
+        wait_for: timeout=180
+        delegate_to: localhost
+
+      - name: run app
+        shell: ansible-playbook -i hosts app_provisioning.yml
+        delegate_to: localhost
+
+      - name: add the webservers to the load balancer
+        local_action:
+          module: ec2_elb
+          aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+          aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+          instance_id: "{{ item.id }}"
+          ec2_elbs: "{{ lb_name }}"
+          state: present
+          region: "{{ region }}"
+          wait: no
+        with_items: "{{ app.instances }}"

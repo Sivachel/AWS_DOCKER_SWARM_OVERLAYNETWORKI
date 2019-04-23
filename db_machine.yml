@@ -1,0 +1,76 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars_files:
+    - ./aws_keys.yml
+    - ./aws_vars.yml
+  tasks:
+    - name: Create a security group for db
+      ec2_group:
+        name: "{{ security_group_db }}"
+        description: The mySQL database security group
+        region: "{{ region }}"
+        aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+        aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 80
+            to_port: 80
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 443
+            to_port: 443
+            cidr_ip: 0.0.0.0/0
+        rules_egress:
+          - proto: all
+            cidr_ip: 0.0.0.0/0
+
+    - name: Launch the new EC2 Instance for db
+      ec2:
+        aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+        aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+        group: "{{ security_group_db }}"
+        instance_type: "{{ instance_type }}"
+        image: "{{ image }}"
+        wait: true
+        region: "{{ region }}"
+        keypair: "{{ keypair }}"
+        count: "{{ db_count }}"
+        count_tag:
+          Name: "{{ db_name }}"
+        instance_tags:
+          Name: "{{ db_name }}"
+      register: db
+
+    - name: Add the newly created EC2 instance(s) to host group
+      lineinfile: dest={{ hostpath }}
+                  regexp={{ item.public_ip }}
+                  insertafter="[db]"
+                  line="{{ item.public_ip }} {{hoststring}}"
+                  state=present
+      with_items: "{{ db.instances }}"
+
+    - name: Add tag to Instance(s)
+      ec2_tag:
+        aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+        aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+        resource: "{{ item.id }}"
+        region: "{{ region }}"
+        state: "present"
+      with_items: "{{ db.instances }}"
+      args:
+        tags:
+          Type: mySQL
+
+    - name: Wait for SSH to come up
+      local_action: wait_for
+                    host={{ item.public_ip }}
+                    port=22
+                    state=started
+      with_items: "{{ db.instances }}"

@@ -1,0 +1,84 @@
+---
+- hosts: app
+  remote_user: ubuntu
+  become: yes
+  gather_facts: False
+  vars_files:
+    - ./token.yml
+
+  pre_tasks:
+    - name: 'install python'
+      raw: 'sudo apt-get -y install python'
+
+    - name: 'install pip'
+      raw: 'sudo add-apt-repository universe && sudo apt-get update && sudo apt-get install python-pip -y'
+
+    - name: 'Install docker-py module'
+      raw: 'sudo pip install docker-py'
+
+  tasks:
+
+    - name: "APT - Add Docker GPG key"
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: "APT - Add Docker repository"
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable"
+        state: present
+        filename: docker
+
+    - name: "APT - install misc packages"
+      apt:
+        name: ['aptitude', 'apt-transport-https', 'ca-certificates', 'curl', 'software-properties-common']
+        update_cache: yes
+
+    - name: "APT - install 'docker-ce'"
+      apt:
+        name: "docker-ce"
+        update_cache: yes
+
+    - name: pull Snipeit docker image from docker hub
+      docker_image:
+        name: snipe/snipe-it
+        state: present
+
+    - name: Copy env files
+      copy:
+        src: ./app.env
+        dest: /home/ubuntu/app/
+        mode: 0644
+
+    - name: Join docker swarm as worker node
+      docker_swarm:
+        state: join
+        advertise_addr: 192.168.10.130
+        join_token: "{{ WORKER_TOKEN }}"
+        remote_addrs: [ '192.168.10.100:2377' ]
+
+    # Ansisble module not able to find overlay network
+    # - name: Running the container
+    #   docker_container:
+    #     networks:
+    #       - name: my-overlay-net
+    #     image: snipe/snipe-it:latest
+    #     detach: yes
+    #     name: snipeit
+    #     env_file: /home/ubuntu/app/app.env
+    #     links: snipe-mysql:mysql
+    #     volumes:
+    #       - snipe-vol:/var/lib/snipeit
+    #     exposed_ports:
+    #       - 80
+    #       - 443
+    #     published_ports:
+    #       - "80:80"
+    #       - "443:443"
+    #     state: started
+
+    - name: Creating Snipeit container & joining overlay network using shell
+      shell: docker run -d -p 80:80 -p 443:443 --name="snipeit" --network my-overlay-net --link snipe-mysql:mysql --mount source=snipe-vol,dst=/var/lib/snipeit --env-file=/home/ubuntu/app/app.env snipe/snipe-it
+
+    - name: Check if container is running
+      shell: docker ps
