@@ -3,8 +3,8 @@
   remote_user: ubuntu
   become: yes
   gather_facts: False
-  # vars_files:
-  #   - ./token.yml
+  vars_files:
+    - ./generated_vars.yml
 
   pre_tasks:
 
@@ -19,63 +19,101 @@
 
   tasks:
 
-    - name: "APT - Add Docker GPG key"
-      apt_key:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        state: present
+      - name: "APT - Add Docker GPG key"
+        apt_key:
+          url: https://download.docker.com/linux/ubuntu/gpg
+          state: present
 
-    - name: "APT - Add Docker repository"
-      apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable"
-        state: present
-        filename: docker
+      - name: "APT - Add Docker repository"
+        apt_repository:
+          repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable"
+          state: present
+          filename: docker
 
-    - name: "APT - install misc packages"
-      apt:
-        name: ['aptitude', 'apt-transport-https', 'ca-certificates', 'curl','software-properties-common']
-        update_cache: yes
+      - name: "APT - install misc packages"
+        apt:
+          name: ['aptitude', 'apt-transport-https', 'ca-certificates', 'curl','software-properties-common']
+          update_cache: yes
 
-    - name: "APT - install 'docker-ce'"
-      apt:
-        name: "docker-ce"
-        update_cache: yes
+      - name: "APT - install 'docker-ce'"
+        apt:
+          name: "docker-ce"
+          update_cache: yes
 
-    - name: pull mySQL docker image from docker hub
-      docker_image:
-        name: mysql:5.6
+      - name: pull mySQL docker image from docker hub
+        docker_image:
+          name: mysql:5.6
 
-    - name: Copy env files
-      copy:
-        src: ./app.env
-        dest: /home/ubuntu/app/
-        mode: 0644
+      - name: Copy env files
+        copy:
+          src: ./app.env
+          dest: /home/ubuntu/app/
+          mode: 0644
 
-    # - name: Join docker swarm as worker node
-    #   docker_swarm:
-    #     state: join
-    #     advertise_addr: 192.168.10.120
-    #     join_token: "{{ WORKER_TOKEN }}"
-    #     remote_addrs: [ '192.168.10.100:2377' ]
+      - name: swarm initialiasation
+        shell: docker swarm init --advertise-addr="{{ DB_IP }}"
 
-    #Anisble module not able to find overlay network
-    - name: Running the container
-      docker_container:
-        name: snipe-mysql
-        env_file: /home/ubuntu/app/app.env
-        volumes:
-          - snipesql-vol:/var/lib/mysql
-        detach: yes
-        exposed_ports:
-          - 3306
-        image: mysql:5.6
-        published_ports:
-          - "3306:3306"
-        # networks:
-        #   - name: my-overlay-net
-        state: started
 
-    # - name: Creating mysql container & joining overlay network using shell
-    #   shell: docker run --name snipe-mysql --network my-overlay-net --env-file=/home/ubuntu/app/app.env --mount source=snipesql-vol,target=/var/lib/mysql -d -p 3306:3306 mysql:5.6
+      # Doing this as shell command as Anisble not picking up any task
+      # - name: swarm initialiasation
+      #   docker_swarm:
+      #     state: present
+      #     advertise_addr: "{{ DB_IP }}"
 
-    - name: Check if container is running
-      shell: docker ps
+      - name: Get docker swarm worker token
+        shell: docker swarm join-token -q worker
+        register: worker_token
+
+      - name: Print out worker_token
+        debug: msg="{{ worker_token.stdout }}"
+      #
+      # - set_fact:
+      #     WORKER_TOKEN: "{{ worker_token.stdout }}"
+
+      - name: Copy worker token to a YAML variable file
+        local_action:
+          module: lineinfile
+          dest: ./generated_vars.yml
+          regexp: "^WORKER_TOKEN: "
+          line: "WORKER_TOKEN: {{ worker_token.stdout}}"
+
+      # Does not work yet. Attachable feature to be added to docker_network module on Anssible 2.8
+      # - name: Create Overlay network
+      #   docker_network:
+      #     name: my_overlay_net
+      #     driver: overlay
+      #     state: present
+      #     attachable: true
+
+      - name:  Creating a overlay network using shell command
+        shell: docker network create --driver=overlay --attachable my-overlay-net
+
+          # - name: Join docker swarm as worker node
+          #   docker_swarm:
+          #     state: join
+          #     advertise_addr: 192.168.10.120
+          #     join_token: "{{ WORKER_TOKEN }}"
+          #     remote_addrs: [ '192.168.10.100:2377' ]
+
+      #Anisble module not able to find overlay network
+      # - name: Running the container
+      #   docker_container:
+      #     name: snipe-mysql
+      #     env_file: /home/ubuntu/app/app.env
+      #     volumes:
+      #       - snipesql-vol:/var/lib/mysql
+      #     detach: yes
+      #     exposed_ports:
+      #       - 3306
+      #     image: mysql:5.6
+      #     published_ports:
+      #       - "3306:3306"
+          # networks:
+          #   - name: my-overlay-net
+          # state: started
+
+      - name: Creating mysql container & joining overlay network using shell
+        shell: docker run --name snipe-mysql --network my-overlay-net --env-file=/home/ubuntu/app/app.env --mount source=snipesql-vol,target=/var/lib/mysql -d -p 3306:3306 mysql:5.6
+
+      - name: Check if container is running
+        shell: docker ps

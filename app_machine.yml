@@ -27,6 +27,14 @@
               from_port: 443
               to_port: 443
               cidr_ip: 0.0.0.0/0
+            - proto: tcp
+              from_port: 2377
+              to_port: 2377
+              cidr_ip: 0.0.0.0/0
+            - proto: tcp
+              from_port: 3306
+              to_port: 3306
+              cidr_ip: 0.0.0.0/0
           rules_egress:
             - proto: all
               cidr_ip: 0.0.0.0/0
@@ -51,17 +59,18 @@
       - name: Add the newly created EC2 instance(s) to host group
         lineinfile: dest={{ hostpath }}
                     regexp={{ item.public_ip }}
-                    insertbefore="[db]"
+                    insertafter='\[app\]'
                     line="{{ item.public_ip }} {{hoststring}}"
                     state=present
         with_items: "{{ app.instances }}"
-      #
-      # - name: Copy worker token to a YAML variable file
-      #   lineinfile:
-      #     dest: ./generated_vars.yml
-      #     regexp: "^APP_IP: "
-      #     line: "APP_IP: {{ item.public_ip }}"
-      #   with_items: "{{ app.instances }}"
+
+      - name: Copy App ip to generated_vars file
+        lineinfile:
+          dest: ./generated_vars.yml
+          regexp: "^APP_IP: "
+          line: "APP_IP: {{ item.public_ip }}"
+        with_items: "{{ app.instances }}"
+
 
       - name: Add tag to Instance(s)
         ec2_tag:
@@ -101,9 +110,9 @@
         wait_for: timeout=180
         delegate_to: localhost
 
-      - name: run app
-        shell: ansible-playbook -i hosts app_provisioning.yml
-        delegate_to: localhost
+      # - name: run app
+      #   shell: ansible-playbook -i hosts app_provisioning.yml
+      #   delegate_to: localhost
 
       - name: add the webservers to the load balancer
         local_action:

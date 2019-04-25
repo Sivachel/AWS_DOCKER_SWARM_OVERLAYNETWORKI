@@ -51,9 +51,24 @@
     - name: Add the newly created EC2 instance(s) to host group
       lineinfile: dest={{ hostpath }}
                   regexp={{ item.public_ip }}
-                  insertafter="[db]"
+                  insertafter='\[db\]'
                   line="{{ item.public_ip }} {{hoststring}}"
                   state=present
+      with_items: "{{ db.instances }}"
+
+
+    - name: Copy database ip to generated_vars file
+      lineinfile:
+        dest: ./generated_vars.yml
+        regexp: "^DB_IP: "
+        line: "DB_IP: {{ item.public_ip }}"
+      with_items: "{{ db.instances }}"
+
+    - name: Copy database ip to app.env file
+      lineinfile:
+        dest: ./app.env
+        regexp: "^MYSQL_PORT_3306_TCP_ADDR="
+        line: "MYSQL_PORT_3306_TCP_ADDR={{ item.public_ip }}"
       with_items: "{{ db.instances }}"
 
     - name: Add tag to Instance(s)

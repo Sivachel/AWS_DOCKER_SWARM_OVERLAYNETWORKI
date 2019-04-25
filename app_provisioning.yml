@@ -4,7 +4,7 @@
   become: yes
   gather_facts: False
   vars_files:
-    - ./token.yml
+    - ./generated_vars.yml
 
   pre_tasks:
     - name: 'install python'
@@ -50,12 +50,15 @@
         dest: /home/ubuntu/app/
         mode: 0644
 
+    # - name: Join docker swarm as worker node
+    #   docker_swarm:
+    #     state: join
+    #     advertise_addr: "{{ APP_IP}}"
+    #     join_token: "{{ WORKER_TOKEN }}"
+    #     remote_addrs: [ '"{{ DB_IP }}":2377' ]
+
     - name: Join docker swarm as worker node
-      docker_swarm:
-        state: join
-        advertise_addr: 192.168.10.130
-        join_token: "{{ WORKER_TOKEN }}"
-        remote_addrs: [ '192.168.10.100:2377' ]
+      shell: docker swarm join --token "{{ WORKER_TOKEN }}" "{{ DB_IP }}":2377 
 
     # Ansisble module not able to find overlay network
     # - name: Running the container
