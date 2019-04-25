@@ -122,10 +122,6 @@
         wait_for: timeout=180
         delegate_to: localhost
 
-      # - name: run app
-      #   shell: ansible-playbook -i hosts app_provisioning.yml
-      #   delegate_to: localhost
-
       - name: add the webservers to the load balancer
         local_action:
           module: ec2_elb

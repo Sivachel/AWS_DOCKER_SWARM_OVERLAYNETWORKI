@@ -50,35 +50,8 @@
         dest: /home/ubuntu/app/
         mode: 0644
 
-    # - name: Join docker swarm as worker node
-    #   docker_swarm:
-    #     state: join
-    #     advertise_addr: "{{ APP_IP}}"
-    #     join_token: "{{ WORKER_TOKEN }}"
-    #     remote_addrs: [ '"{{ DB_IP }}":2377' ]
-
     - name: Join docker swarm as worker node
-      shell: docker swarm join --token "{{ WORKER_TOKEN }}" "{{ DB_IP }}":2377 
-
-    # Ansisble module not able to find overlay network
-    # - name: Running the container
-    #   docker_container:
-    #     networks:
-    #       - name: my-overlay-net
-    #     image: snipe/snipe-it:latest
-    #     detach: yes
-    #     name: snipeit
-    #     env_file: /home/ubuntu/app/app.env
-    #     links: snipe-mysql:mysql
-    #     volumes:
-    #       - snipe-vol:/var/lib/snipeit
-    #     exposed_ports:
-    #       - 80
-    #       - 443
-    #     published_ports:
-    #       - "80:80"
-    #       - "443:443"
-    #     state: started
+      shell: docker swarm join --token "{{ WORKER_TOKEN }}" "{{ DB_IP }}":2377
 
     - name: Creating Snipeit container & joining overlay network using shell
       shell: docker run -d -p 80:80 -p 443:443 --name="snipeit" --network my-overlay-net --link snipe-mysql:mysql --mount source=snipe-vol,dst=/var/lib/snipeit --env-file=/home/ubuntu/app/app.env snipe/snipe-it

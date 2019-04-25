@@ -85,7 +85,7 @@
         line: "DB_IP: {{ item.public_ip }}"
       with_items: "{{ db.instances }}"
 
-    - name: Copy database ip to app.env file
+    - name: Copy database (MYSQL ADDR) ip to app.env file
       lineinfile:
         dest: ./app.env
         regexp: "^MYSQL_PORT_3306_TCP_ADDR="

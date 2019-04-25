@@ -1,12 +1,12 @@
 - hosts: local
   connection: local
-  vars:
-    region: eu-west-2
   vars_files:
     - aws_keys.yml
     - aws_vars.yml
     - generated_vars.yml
+
   tasks:
+
     - name: Gather EC2 facts
       ec2_instance_facts:
         region: "{{ region }}"
